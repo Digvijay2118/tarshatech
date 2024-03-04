@@ -1,0 +1,1119 @@
+import { NextResponse } from "next/server";
+import bcrypt from "bcrypt";
+import fs from "fs";
+import path from "path";
+import { database } from "@/config/db";
+
+export async function POST(request) {
+  try {
+    // Use request.formData() instead of request.json()
+    const formData = await request.formData();
+
+    // Access fields in formData using get()
+    const first_name = formData.get("first_name");
+    const last_name = formData.get("last_name");
+    const email = formData.get("email");
+    const password = formData.get("password");
+    const phone = formData.get("phone");
+    const active = parseInt(formData.get("active")) || 0;
+    const firm_name = formData.get("firm_name");
+    const plan_start = formData.get("plan_start_date");
+    const plan_expiry = formData.get("plan_expiry_date");
+    const payment_status = formData.get("payment_status");
+    const plans = formData.get("plans");
+    const plan_status = formData.get("plan_status");
+    const firmLogoFile = formData.get("file");
+    const firm_logo = firmLogoFile.name;
+    const selectplan = formData.get("selectedPlan");
+
+    // plans Data
+    const selectplanData = JSON.parse(selectplan);
+    const periodic = selectplanData.periodic;
+    const title = selectplanData.title;
+    const support_text = selectplanData.support_text;
+    const selectstart_date = selectplanData.start_date;
+    const selectend_date = selectplanData.end_date;
+
+    const start_date = new Date(selectstart_date)
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+    const end_date = new Date(selectend_date)
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+
+    const gst = selectplanData.gst;
+    const max_admin_allow = selectplanData.max_admin_allow;
+    const max_users_allow = selectplanData.max_users_allow;
+    const max_customer = selectplanData.max_customer;
+    const max_file = selectplanData.max_file;
+    const max_upload_size = selectplanData.max_upload_size;
+    const price_per_month = selectplanData.price_per_month;
+    const sell_price_month = selectplanData.sell_price_month;
+    const price_per_year = selectplanData.price_per_year;
+    const sell_price_year = selectplanData.sell_price_year;
+    const status = selectplanData.status;
+
+    var salt = bcrypt.genSaltSync(10);
+    const hashedPassword = bcrypt.hashSync(password, salt);
+    const currentDate = new Date().toISOString().slice(0, 19).replace("T", " ");
+
+    // Insert into the 'company' table
+    const company = {
+      name: firm_name,
+      created_at: currentDate,
+      created_by: 1,
+    };
+
+    const companyResult = await database.query(
+      "INSERT INTO `company` SET ?",
+      company
+    );
+
+    // Retrieve the inserted company_id
+    const companyId = companyResult[0].insertId;
+    console.log("companyResult===>", companyResult);
+    console.log("conmpany===>", companyId);
+
+    const users = {
+      first_name,
+      last_name,
+      email,
+      username: email,
+      password: hashedPassword,
+      phone: phone !== "" ? phone : "",
+      active,
+      department_id: 1,
+      post_id: 1,
+      firm_name,
+      plans,
+      plan_start,
+      plan_expiry,
+      payment_status,
+      plan_status,
+      firm_logo,
+      comp_id: companyId,
+    };
+
+    // console.log("users--->", users);
+
+    const result = await database.query("INSERT INTO `users` SET ?", users);
+
+    const userId = result[0].insertId;
+
+    console.log("userId===>", userId);
+
+    const usergroup = {
+      mst_user_id: userId,
+      mst_group_id: 1,
+    };
+
+    const user = await database.query(
+      "INSERT INTO `users_groups` SET ?",
+      usergroup
+    );
+
+    const plansData = {
+      user_id: userId,
+      title,
+      slug: 1,
+      periodic,
+      support_text,
+      start_date,
+      end_date,
+      gst,
+      max_admin_allow,
+      max_users_allow,
+      max_customer,
+      max_file,
+      max_upload_size,
+      price_per_month,
+      sell_price_month,
+      price_per_year,
+      sell_price_year,
+      status,
+      is_deleted: 0,
+    };
+
+    const plan = await database.query("INSERT INTO `plans` SET ?", plansData);
+
+    // const Transcation = await database.query("INSERT INTO `transcation` SET ?", transcation);
+
+    // const createDatabaseSQL = `CREATE DATABASE IF NOT EXISTS ${firm_name}`;
+    // try {
+    //   await pool.query(createDatabaseSQL);
+
+    //   const useDatabaseSQL = `USE ${firm_name}`;
+    //   await pool.query(useDatabaseSQL);
+    //   console.log(`Switched to database: ${firm_name}`);
+
+    // // Create tables in the new database
+    // await createTables();
+    // // const result = await pool.query("INSERT INTO `users` SET ?", users);
+    // const result = await pool.query(`INSERT INTO \`${firm_name}\`.\`users\` SET ?`, users);
+    // // console.log("Insertion result:", result);
+    // // console.log(`Generated SQL Query: INSERT INTO \`${firm_name}\`.\`users\` SET ?`, users);
+
+    if (firmLogoFile) {
+      const uploadFolder = path.join(process.cwd(), "public/uploads"); // Adjust the folder path as needed
+      const filePath = path.join(uploadFolder, firm_logo);
+
+      if (!fs.existsSync(uploadFolder)) {
+        fs.mkdirSync(uploadFolder);
+      }
+
+      const fileBuffer = await firmLogoFile.arrayBuffer();
+      fs.writeFileSync(filePath, Buffer.from(fileBuffer));
+    }
+
+    // Assuming the insertion was successful, you can return a success response
+    return new NextResponse(200, {
+      success: true,
+      message: "User created successfully",
+    });
+    // } catch (err) {
+    //   console.error("Data not inserted", err);
+
+    //   // If there's an error, return an appropriate error response
+    //   return new NextResponse(500, {
+    //     success: false,
+    //     message: "Internal Server Error",
+    //   });
+    // }
+  } catch (err) {
+    console.error("Error parsing FormData", err);
+
+    // If there's an error parsing FormData, return an appropriate error response
+    return new NextResponse(400, { success: false, message: "Bad Request" });
+  }
+}
+
+// async function createTables() {
+//   // Define your table creation SQL statements here
+//   const createTable1SQL = `
+//   CREATE TABLE IF NOT EXISTS \`all_important_fees\` (
+//     \`id\` int NOT NULL AUTO_INCREMENT,
+//     \`mst_company_id\` int DEFAULT NULL,
+//     \`mst_file_id\` int DEFAULT NULL,
+//     \`mst_type_id\` int DEFAULT NULL,
+//     \`show_website\` int DEFAULT '0',
+//     \`description\` text,
+//     \`short_description\` text,
+//     \`amount\` double DEFAULT NULL,
+//     \`date\` date DEFAULT NULL,
+//     \`file\` text,
+//     \`is_save\` int NOT NULL DEFAULT '0',
+//     \`is_skip\` int NOT NULL DEFAULT '0',
+//     \`is_deleted\` int NOT NULL DEFAULT '0',
+//     \`created_at\` datetime DEFAULT NULL,
+//     \`created_by\` int DEFAULT NULL,
+//     \`updated_at\` datetime DEFAULT NULL,
+//     \`updated_by\` int DEFAULT NULL,
+//     PRIMARY KEY (\`id\`)
+//   )
+// `;
+
+//   const createTable2SQL = `
+//   CREATE TABLE IF NOT EXISTS \`cities\` (
+//     \`city_id\` int NOT NULL AUTO_INCREMENT,
+//     \`name\` varchar(30) NOT NULL,
+//     \`state_id\` int NOT NULL,
+//     PRIMARY KEY (\`city_id\`)
+//   )
+// `;
+
+//   const createTable3Sql = `
+//   CREATE TABLE \`contacts\` (
+//     \`id\` int NOT NULL AUTO_INCREMENT,
+//     \`services\` varchar(100) DEFAULT NULL,
+//     \`name\` varchar(100) DEFAULT NULL,
+//     \`email\` varchar(150) DEFAULT NULL,
+//     \`company_name\` varchar(100) DEFAULT NULL,
+//     \`description\` text,
+//     \`created_at\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//     PRIMARY KEY (\`id\`)
+//   )
+// `;
+
+//   const createTable4Sql = `
+// CREATE TABLE IF NOT EXISTS \`countries\` (
+//   \`country_id\` int NOT NULL AUTO_INCREMENT,
+//   \`sortname\` varchar(3) NOT NULL,
+//   \`name\` varchar(150) NOT NULL,
+//   PRIMARY KEY (\`country_id\`)
+// )
+// `;
+
+//   const createTable5Sql = `CREATE TABLE \`deposit_expense\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`expense_type\` int DEFAULT NULL COMMENT '1=Deposit, 2 = File Expense, 3  = Office Expense',
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'master file id',
+//   \`team_id\` int DEFAULT NULL COMMENT 'user_id',
+//   \`amount\` double DEFAULT NULL,
+//   \`description\` text,
+//   \`date\` date NOT NULL,
+//   \`receipt_image\` text COMMENT 'image',
+//   \`submitters_img1\` text,
+//   \`submitters_img2\` text,
+//   \`submitters_img3\` varchar(250) DEFAULT NULL,
+//   \`isdeleted\` int NOT NULL DEFAULT '0' COMMENT '1 = deleted',
+//   \`is_approved\` int NOT NULL DEFAULT '0' COMMENT '1 = approved , 0 = pending , 2=cancel or reject',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_at\` timestamp NULL DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable6Sql = `CREATE TABLE \`document_customer\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_customer_id\` int DEFAULT NULL COMMENT 'mst_cust',
+//   \`document_path\` int DEFAULT NULL,
+//   \`mst_document_id\` int DEFAULT NULL COMMENT 'mst_doc',
+//   \`mst_company_id\` int DEFAULT NULL COMMENT 'mst_comp',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_a\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable7sql = `CREATE TABLE \`document_employee\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_employee_id\` int DEFAULT NULL COMMENT 'mst_emp',
+//   \`mst_document_id\` text COMMENT 'mst_doc',
+//   \`document_path\` text,
+//   \`mst_company_id\` int DEFAULT NULL COMMENT 'mst_comp',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable8sql = `CREATE TABLE \`file_aminities_fees\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL,
+//   \`amount\` float DEFAULT NULL,
+//   \`emi\` int DEFAULT NULL,
+//   \`emi_data\` text COMMENT 'json_data [{date:"",amt:"",rec_date:"",file_path:""},{date:"",amt:"",rec_date:"",file_path:""}]',
+//   \`is_type\` int DEFAULT NULL COMMENT '1=fsi,2=ic',
+//   \`is_save\` int NOT NULL DEFAULT '0',
+//   \`is_skip\` int NOT NULL DEFAULT '0',
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`created_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable9sql = `CREATE TABLE \`file_approved_plan\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`mst_document_id\` int DEFAULT NULL,
+//   \`document_name\` text,
+//   \`show_website\` int DEFAULT '0',
+//  \`document_path\` text,
+//   \`is_save\` int DEFAULT '0',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   \`is_skip\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable10sql = `CREATE TABLE \`file_client_msg\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`message\` text,
+//   \`file_received_date\` date DEFAULT NULL,
+//   \`hod_liasoner_id\` int DEFAULT NULL,
+//   \`is_save\` int DEFAULT '0',
+//   \`is_skip\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+//   const createTable11sql = `CREATE TABLE \`file_details\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`mst_company_id\` int DEFAULT NULL COMMENT 'mst_comp',
+//   \`smc_case_app_id\` text,
+//   \`village\` text,
+//   \`taluka\` text,
+//   \`district\` text,
+//   \`rs_block_no\` int DEFAULT NULL COMMENT '1=RSNo,2=BlockNo',
+//   \`rs_block_no_text\` text,
+//   \`tika_moje_no\` int DEFAULT NULL COMMENT '1=tika,2=moje',
+//   \`tika_moje_no_text\` text,
+//   \`ward_no\` text,
+//   \`cs_no\` text,
+//   \`tps_no\` text,
+//   \`tps_stage\` int DEFAULT NULL COMMENT '1=''draft'',2=''final'',3=''Non tp''',
+//   \`op_no\` text,
+//   \`fp_no\` text,
+//   \`subplot_no\` text,
+//   \`is_save\` int DEFAULT '0',
+//   \`is_skip\` int NOT NULL DEFAULT '0',
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`created_b\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable12sql = `CREATE TABLE \`file_document_list\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`mst_document_id\` int DEFAULT NULL,
+//   \`disp_order\` int DEFAULT '1',
+//   \`is_save\` int DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable13sql = `CREATE TABLE \`file_document_upload\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`mst_document_id\` text,
+//   \`document_name\` text,
+//   \`show_website\` int DEFAULT '0',
+//   \`document_path\` text,
+//   \`is_save\` int DEFAULT '0',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   \`is_skip\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable14sql = `CREATE TABLE \`file_employee\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`mst_employee_id\` int DEFAULT NULL COMMENT 'mst_emp',
+//   \`status_file_id\` int DEFAULT NULL COMMENT 'status_file',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable15sql = `CREATE TABLE \`file_enagar_owner_portal\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`application_number\` text,
+//   \`upload_date\` date DEFAULT NULL,
+//   \`approve_date\` date DEFAULT NULL,
+//   \`login\` text,
+//   \`password\` text,
+//   \`is_save\` int DEFAULT '0',
+//   \`is_skip\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable16sql = `CREATE TABLE \`file_enagar_portal\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`drawing_assign_date\` date DEFAULT NULL,
+//   \`completed_date\` date DEFAULT NULL,
+//   \`completed_date2\` date DEFAULT NULL,
+//   \`upload_date\` date DEFAULT NULL,
+//   \`application_number\` text,
+//   \`assign_application_number\` int DEFAULT NULL,
+//   \`pdf_received_date\` date DEFAULT NULL,
+//   \`assign_pdf_received_date\` int DEFAULT NULL,
+//   \`smc_checking_date\` date DEFAULT NULL,
+//   \`assign_smc_checking_date\` int DEFAULT NULL,
+//   \`smc_upload_date\` date DEFAULT NULL,
+//   \`approve_date\` date DEFAULT NULL,
+//   \`assign_approve_date\` int DEFAULT NULL,
+//   \`assign_liasoner\` int DEFAULT NULL,
+//   \`assign_planner\` int DEFAULT NULL,
+//   \`login\` text,
+//   \`password\` text,
+//   \`is_save\` int DEFAULT '0',
+//   \`is_skip\` text,
+//   \`type_save\` text,
+//   \`is_rejected\` int NOT NULL DEFAULT '0',
+//   \`reason\` text,
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable17sql = `CREATE TABLE \`file_plot_validation\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL,
+//   \`mst_type_id\` int DEFAULT NULL,
+//   \`display_order\` int DEFAULT NULL,
+//   \`inward_no\` text,
+//   \`inward_date\` date DEFAULT NULL,
+//   \`outward_no\` text,
+//   \`outward_date\` date DEFAULT NULL,
+//   \`inward_assign_to\` int DEFAULT NULL,
+//   \`outward_assign_to\` int DEFAULT NULL,
+//   \`documents\` text,
+//   \`document_upload_date\` text,
+//   \`inward_is_save\` int NOT NULL DEFAULT '0',
+//   \`outward_is_save\` int NOT NULL DEFAULT '0',
+//   \`inward_is_reject\` int NOT NULL DEFAULT '0',
+//   \`outward_is_reject\` int NOT NULL DEFAULT '0',
+//   \`inward_is_skip\` int NOT NULL DEFAULT '0',
+//   \`outward_is_skip\` int NOT NULL DEFAULT '0',
+//   \`is_rejected\` int NOT NULL DEFAULT '0',
+//   \`reason\` text,
+//   \`created_at\` date DEFAULT NULL,
+//   \`created_by\` int DEFAULT NULL,
+//   \`updated_at\` date DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable18sql = `CREATE TABLE \`file_project\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_file_id\` int DEFAULT NULL,
+//   \`title\` text,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`created_by\` int DEFAULT NULL,
+//   \`updated_by\` datetime DEFAULT NULL,
+//   \`updated_at\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable19sql = `CREATE TABLE \`file_query\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL,
+//   \`type_number\` int DEFAULT NULL COMMENT '1=assistant_junior_eng,2=Deputy eng, 3= zonal officer,4=Deputy commissioner,5 = commissioner',
+//   \`remarks\` text,
+//   \`date\` date DEFAULT NULL,
+//   \`documents\` text,
+//   \`is_save\` int DEFAULT '0',
+//   \`is_skip\` int NOT NULL DEFAULT '0',
+//   \`is_rejected\` int DEFAULT '0',
+//   \`created_at\` datetime DEFAULT NULL,
+//   \`created_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable20sql = `CREATE TABLE \`file_road_scrunity\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`mst_type_id\` int DEFAULT NULL,
+//   \`amount\` float DEFAULT NULL,
+//   \`is_active\` int DEFAULT NULL,
+//   \`show_website\` int DEFAULT NULL,
+//   \`outward_datex\` date DEFAULT NULL,
+//   \`outward_nox\` text,
+//   \`documents\` text,
+//   \`document_upload_date\` date DEFAULT NULL,
+//   \`assign_tox\` int DEFAULT NULL,
+//   \`is_save\` text,
+//   \`is_rejected\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable21sql = `CREATE TABLE \`file_work_fee\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_company_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL,
+//   \`fee_amount\` float DEFAULT NULL,
+//   \`fee_status\` int DEFAULT NULL COMMENT '1=pending, 2 = paid',
+//  \`is_save\` int NOT NULL DEFAULT '0',
+//   \`is_skip\` int NOT NULL DEFAULT '0',
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`created_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable22sql = `CREATE TABLE \`firebase_notification\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`device_token\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`user_id\` int DEFAULT NULL,
+//   \`response\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`msg\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable23sql = `CREATE TABLE \`mst_architect\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`name\` int DEFAULT NULL,
+//   \`isdeleted\` int DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable24sql = `CREATE TABLE \`mst_company\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`comp_name\` text,
+//   \`start_date\` date DEFAULT NULL,
+//   \`isdeleted\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_at\` int DEFAULT NULL,
+//   \`updated_by\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable25sql = `CREATE TABLE \`mst_department\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`name\` text,
+//   \`isdeleted\` int DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+//   const createTable26sql = `CREATE TABLE \`mst_document\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`doc_name\` text,
+//   \`types\` int DEFAULT NULL COMMENT '1=original,2=xerox',
+//   \`category\` text,
+//   \`is_optional\` int DEFAULT NULL COMMENT '1=yes,2=no',
+//   \`comp_id\` int DEFAULT NULL COMMENT 'mst_comp',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable27sql = `CREATE TABLE \`mst_file\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`office_file_no\` text,
+//   \`file_name\` text,
+//   \`cus_id\` int DEFAULT NULL COMMENT 'users-table-role-client',
+//   \`file_type\` text COMMENT 'mst_type',
+//   \`code\` text,
+//   \`dates\` text,
+//   \`images\` text,
+//   \`project_plan\` text CHARACTER SET latin1 COLLATE latin1_swedish_ci,
+//   \`category\` int DEFAULT NULL COMMENT 'status_file',
+//   \`buc\` int DEFAULT NULL COMMENT 'status_file',
+//   \`status\` int DEFAULT NULL COMMENT 'status_file',
+//   \`process\` int DEFAULT NULL COMMENT 'status_file',
+//   \`show_exp\` int DEFAULT NULL COMMENT 'status_file',
+//   \`show_todo\` int DEFAULT NULL COMMENT 'status_file',
+//   \`architect_id\` int DEFAULT NULL COMMENT 'mst_architect',
+//   \`comp_id\` int DEFAULT NULL COMMENT 'mst_comp',
+//   \`file_document_json\` text,
+//   \`is_save\` int DEFAULT '0',
+//   \`mst_stage_id\` int NOT NULL DEFAULT '1' COMMENT 'mst_stage',
+//   \`team_id\` int DEFAULT NULL COMMENT 'users-employee',
+//   \`isdeleted\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_a\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable28sql = `CREATE TABLE \`mst_file_code\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`title\` text,
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   \`is_active\` int NOT NULL DEFAULT '1',
+//   \`created_at\` datetime DEFAULT NULL,
+//   \`created_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable29sql = `CREATE TABLE \`mst_inspection_checklist\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_type_id\` int DEFAULT NULL,
+//   \`titl\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`status\` int NOT NULL DEFAULT '1',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable30sql = `CREATE TABLE \`mst_post\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`name\` text,
+//   \`isdeleted\` int DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable31sql = `CREATE TABLE \`mst_project_subtype\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_project_type_id\` int DEFAULT NULL,
+//   \`title\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`disp_order\` int NOT NULL DEFAULT '1',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`status\` int NOT NULL DEFAULT '1',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable32sql = `CREATE TABLE \`mst_project_type\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`title\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`disp_order\` int NOT NULL DEFAULT '1',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`status\` int NOT NULL DEFAULT '1',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable33sql = `CREATE TABLE \`mst_stage\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`title\` text,
+//   \`disp_order\` int DEFAULT '1',
+//   \`is_active\` int DEFAULT '1',
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable34sql = `CREATE TABLE \`mst_type\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`type_name\` text,
+//   \`types\` text,
+//   \`display_order\` int DEFAULT NULL,
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable35sql = `CREATE TABLE \`notification\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`json_data\` text,
+//   \`child_id\` int DEFAULT '0',
+//   \`table_name\` varchar(200) DEFAULT NULL,
+//   \`assign_to\` int DEFAULT NULL,
+//   \`client_id\` int DEFAULT NULL,
+//   \`is_seen\` int NOT NULL DEFAULT '0',
+//   \`seen_at\` datetime DEFAULT NULL,
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable36sql = `CREATE TABLE \`plans\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`title\` varchar(45) DEFAULT NULL,
+//   \`slug\` int DEFAULT NULL,
+//   \`periodic\` varchar(45) DEFAULT NULL,
+//   \`support_text\` varchar(45) DEFAULT NULL,
+//   \`start_date\` date DEFAULT NULL,
+//   \`end_date\` date DEFAULT NULL,
+//   \`gst\` int DEFAULT NULL,
+//   \`max_admin_allow\` int DEFAULT NULL,
+//   \`max_users_allow\` int DEFAULT NULL,
+//   \`max_customer\` int DEFAULT NULL,
+//   \`max_file\` int DEFAULT NULL,
+//  \`max_upload_size\` int DEFAULT NULL,
+//   \`price_per_month\` int DEFAULT NULL,
+//   \`sell_price_month\` int DEFAULT NULL,
+//   \`price_per_year\` int DEFAULT NULL,
+//   \`sell_price_year\` int DEFAULT NULL,
+//   \`created_by\` int DEFAULT NULL,
+//  \`created_at\` datetime DEFAULT NULL,
+//  \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`is_deleted\` int DEFAULT NULL,
+//   \`status\` varchar(45) DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable37sql = `CREATE TABLE \`process_stage_logs\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_file_id\` int DEFAULT NULL COMMENT 'mst_file',
+//   \`mst_stage_id\` int DEFAULT NULL COMMENT 'mst_stage',
+//   \`details\` text,
+//   \`created_at\` datetime DEFAULT CURRENT_TIMESTAMP,
+//   \`created_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable38sql = `CREATE TABLE \`project_detail_new\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`mst_file_id\` int DEFAULT NULL,
+//   \`project_name\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`project_date\` date DEFAULT NULL,
+//   \`mst_project_type_id\` int DEFAULT NULL,
+//   \`address\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`latitude\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`longitude\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`google_location\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`google_image\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`project_plan\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`status\` int NOT NULL DEFAULT '1',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable39sql = `CREATE TABLE \`project_site_location\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`project_detail_id\` int DEFAULT NULL,
+//   \`direction\` int DEFAULT NULL COMMENT '0='''',1=''east'',2=''west'',3=''north'',4=''south''',
+//   \`description\` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+//   \`file_upload\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`status\` int NOT NULL DEFAULT '1',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable40sql = `CREATE TABLE \`project_type\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`project_detail_id\` int DEFAULT NULL,
+//   \`mst_project_subtype_id\` int DEFAULT NULL,
+//   \`qty\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`status\` int NOT NULL DEFAULT '1',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable41sql = `CREATE TABLE \`project_types_details\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`project_detail_id\` int DEFAULT NULL,
+//   \`project_type_id\` int DEFAULT NULL,
+//   \`title\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`file_upload\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`show_client\` int NOT NULL DEFAULT '2' COMMENT '1=yes,2=no',
+//   \`is_finalize\` int NOT NULL DEFAULT '2' COMMENT '1=yes,2=no',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`status\` int NOT NULL DEFAULT '1',
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable42sql = `CREATE TABLE \`site_inspection\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`client_id\` int DEFAULT NULL,
+//   \`mst_file_project_id\` int DEFAULT NULL,
+//   \`types\` int DEFAULT NULL COMMENT '1=file,2=project',
+//   \`mst_type_id\` int DEFAULT NULL,
+//   \`mst_inspection_checklist_id\` int DEFAULT NULL,
+//   \`others_text\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`key_observation\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`remarks\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`site_incharge\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`authorized_person\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`review_by\` int DEFAULT NULL,
+//   \`client_sign\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`review_by_sign\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`is_deleted\` int DEFAULT NULL,
+//   \`lat_long\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci COMMENT 'json',
+//   \`images\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci COMMENT 'json',
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable43sql = `CREATE TABLE \`states\` (
+//   \`state_id\` int NOT NULL AUTO_INCREMENT,
+//   \`name\` varchar(30) NOT NULL,
+//   \`country_id\` int NOT NULL DEFAULT '1',
+//   PRIMARY KEY (\`state_id\`)
+// )`;
+
+//   const createTable44sql = `CREATE TABLE \`status_file\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`status_file_name\` text,
+//   \`types\` text,
+//   \`comp_id\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable45sql = `CREATE TABLE \`status_users\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`status_users_name\` text,
+//   \`type\` text,
+//   \`comp_id\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable46sql = `CREATE TABLE \`team_leave\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`team_id\` int DEFAULT NULL,
+//   \`title\` varchar(200) DEFAULT NULL,
+//   \`description\` text,
+//   \`from_date\` date DEFAULT NULL,
+//   \`to_date\` date DEFAULT NULL,
+//   \`status\` int DEFAULT '1' COMMENT '1=Pending,2 = accepted,  3 = reject',
+//   \`remarks\` text,
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   \`created_at\` datetime NOT NULL,
+//   \`created_by\` int DEFAULT NULL,
+//   \`updated_at\` datetime DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable47sql = `CREATE TABLE \`todos\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`todo_id\` int DEFAULT NULL,
+//   \`title\` text,
+//  \`team_id\` int DEFAULT NULL,
+//   \`mst_file_id\` int DEFAULT NULL,
+//   \`descriptio\` text,
+//   \`remarks\` text,
+//   \`reason\` text,
+//   \`work_done\` text,
+//   \`work_pending\` text,
+//   \`execution_date\` date DEFAULT NULL,
+//   \`completed_date\` date DEFAULT NULL,
+//   \`extended_date\` date DEFAULT NULL,
+//   \`actual_completed_date\` date DEFAULT NULL,
+//   \`is_deleted\` int NOT NULL DEFAULT '0',
+//   \`is_approved\` int NOT NULL DEFAULT '0',
+//   \`approved_date\` date DEFAULT NULL,
+//   \`card\` text,
+//   \`mark_as_done\` int DEFAULT NULL,
+//   \`created_at\` datetime DEFAULT NULL,
+//   \`created_by\` int DEFAULT NULL,
+//   \`updated_a\` datetime DEFAULT NULL,
+//  \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// ) `;
+
+//   const createTable48sql = `CREATE TABLE \`user_department_post\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`user_id\` int DEFAULT NULL,
+//   \`department_id\` int DEFAULT NULL,
+//   \`post_id\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable49sql = `CREATE TABLE \`user_track\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`user_id\` int DEFAULT NULL,
+//   \`track_data\` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+//   \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable50sql = `CREATE TABLE \`users\` (
+//   \`id\` int NOT NULL AUTO_INCREMENT,
+//   \`first_name\` varchar(100) NOT NULL,
+//  \`last_name\` text,
+//  \`email\` varchar(150) NOT NULL,
+//   \`password\` varchar(250) NOT NULL,
+//   \`username\` varchar(100) NOT NULL,
+//   \`phone\` varchar(12) NOT NULL,
+//   \`country_id\` int DEFAULT NULL,
+//   \`city_id\` int DEFAULT NULL,
+//   \`state_id\` int DEFAULT NULL,
+//   \`street\` varchar(100) DEFAULT NULL,
+//   \`zip_code\` varchar(20) DEFAULT NULL,
+//   \`active\` int NOT NULL DEFAULT '1',
+//   \`address\` varchar(100) DEFAULT NULL,
+//   \`description\` varchar(250) DEFAULT NULL,
+//   \`profile_picture\` varchar(100) DEFAULT NULL,
+//   \`department_id\` int DEFAULT NULL,
+//  \`post_id\` int DEFAULT NULL,
+//  \`comp_id\` int DEFAULT NULL,
+//  \`firm_logo\` varchar(225) DEFAULT NULL,
+//  \`firm_name\` varchar(45) DEFAULT NULL,
+//  \`plan_start\` date DEFAULT NULL,
+//  \`plan_expiry\` date DEFAULT NULL,
+//  \`payment_status\` int DEFAULT NULL,
+//  \`plan_status\` int DEFAULT NULL,
+//   \`device_token\` text,
+//   \`isdeleted\` int NOT NULL DEFAULT '0',
+//   \`created_by\` int DEFAULT NULL,
+//   \`created_at\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+//   \`updated_at\` timestamp NULL DEFAULT NULL,
+//   \`updated_by\` int DEFAULT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+//   const createTable51sql = `CREATE TABLE \`mst_groups\` (
+//     \`id\` mediumint unsigned NOT NULL AUTO_INCREMENT,
+//     \`name\` varchar(20) NOT NULL,
+//     \`description\` varchar(100) NOT NULL,
+//     PRIMARY KEY (\`id\`)
+//   )`;
+//   const insertDataSql = `
+//     INSERT INTO \`mst_groups\` (id, name, description)
+//     VALUES
+//       ("1", "admin", "Administrator"),
+//       ("2", "Employees", "Employees"),
+//       ("3", "Registered", "Registered"),
+//       ("4", "Client", "Client"),
+//       ("5", "subadmin", "Sub-Administrator"),
+//       ("6", "cordinator", "Coordinator")
+//   `;
+
+//   const createTable52sql = `CREATE TABLE \`users_groups\` (
+//   \`id\` int unsigned NOT NULL AUTO_INCREMENT,
+//   \`mst_user_id\` int NOT NULL,
+//   \`mst_group_id\` mediumint unsigned NOT NULL,
+//   PRIMARY KEY (\`id\`)
+// )`;
+
+// const insertData52Sql = `
+// INSERT INTO \`users_groups\` (mst_user_id, mst_group_id)
+// VALUES
+//   ("1", "1")
+// `;
+
+//   async function createTable() {
+//     try {
+//       // Create table
+//       await pool.query(createTable51sql);
+//       await pool.query(createTable52sql);
+//       console.log("Table created successfully.");
+//     } catch (error) {
+//       console.error("Error creating table:", error.message);
+//     }
+//   }
+
+//   async function insertData() {
+//     try {
+//       // Insert data
+//       await pool.query(insertDataSql);
+//       await pool.query(insertData52Sql);
+//       console.log("Data inserted successfully.");
+//     } catch (error) {
+//       console.error("Error inserting data:", error.message);
+//     }
+//   }
+
+//   async function createTableAndInsertData() {
+//     await createTable();
+//     await insertData();
+//   }
+
+//   // Call the main function
+
+//   // Execute the SQL statements to create tables
+//   await pool.query(createTable1SQL);
+//   await pool.query(createTable2SQL);
+//   await pool.query(createTable3Sql);
+//   await pool.query(createTable4Sql);
+//   await pool.query(createTable5Sql);
+//   await pool.query(createTable6Sql);
+//   await pool.query(createTable7sql);
+//   await pool.query(createTable8sql);
+//   await pool.query(createTable9sql);
+//   await pool.query(createTable10sql);
+//   await pool.query(createTable11sql);
+//   await pool.query(createTable12sql);
+//   await pool.query(createTable13sql);
+//   await pool.query(createTable14sql);
+//   await pool.query(createTable15sql);
+//   await pool.query(createTable16sql);
+//   await pool.query(createTable17sql);
+//   await pool.query(createTable18sql);
+//   await pool.query(createTable19sql);
+//   await pool.query(createTable20sql);
+//   await pool.query(createTable21sql);
+//   await pool.query(createTable22sql);
+//   await pool.query(createTable23sql);
+//   await pool.query(createTable24sql);
+//   await pool.query(createTable25sql);
+//   await pool.query(createTable26sql);
+//   await pool.query(createTable27sql);
+//   await pool.query(createTable28sql);
+//   await pool.query(createTable29sql);
+//   await pool.query(createTable30sql);
+//   await pool.query(createTable31sql);
+//   await pool.query(createTable32sql);
+//   await pool.query(createTable33sql);
+//   await pool.query(createTable34sql);
+//   await pool.query(createTable35sql);
+//   await pool.query(createTable36sql);
+//   await pool.query(createTable37sql);
+//   await pool.query(createTable38sql);
+//   await pool.query(createTable39sql);
+//   await pool.query(createTable40sql);
+//   await pool.query(createTable41sql);
+//   await pool.query(createTable42sql);
+//   await pool.query(createTable43sql);
+//   await pool.query(createTable44sql);
+//   await pool.query(createTable45sql);
+//   await pool.query(createTable46sql);
+//   await pool.query(createTable47sql);
+//   await pool.query(createTable48sql);
+//   await pool.query(createTable49sql);
+//   await pool.query(createTable50sql);
+//   // await pool.query(createTable52sql);
+//   //   await pool.query(createTable52sql);
+//   createTableAndInsertData();
+//   console.log("Tables created successfully");
+// }
+
+export async function GET(request) {
+  try {
+    const result = await database.query(
+      "SELECT * FROM users where isdeleted = 0"
+    );
+    // console.log("User data -->", result);
+
+    return NextResponse.json({ result });
+  } catch (error) {
+    console.error("GET Error:", error);
+    return NextResponse.json({ message: error.message }, { status: 500 });
+  }
+}
